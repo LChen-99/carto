@@ -1,4 +1,12 @@
 /*
+ * @Author: LuoChen 1425523063@qq.com
+ * @Date: 2022-12-08 15:32:55
+ * @LastEditors: LuoChen 1425523063@qq.com
+ * @LastEditTime: 2023-02-09 19:55:22
+ * @FilePath: /catkin_ws/src/cartographer/cartographer/mapping/internal/2d/scan_matching/real_time_correlative_scan_matcher_2d.h
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ */
+/*
  * Copyright 2016 The Cartographer Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,12 +47,12 @@
 #include <iostream>
 #include <memory>
 #include <vector>
-
+#include <pcl/filters/voxel_grid.h>
 #include "Eigen/Core"
 #include "cartographer/mapping/2d/grid_2d.h"
 #include "cartographer/mapping/internal/2d/scan_matching/correlative_scan_matcher_2d.h"
 #include "cartographer/mapping/proto/scan_matching/real_time_correlative_scan_matcher_options.pb.h"
-
+#include "cartographer/mapping/2d/submap_2d.h"
 namespace cartographer {
 namespace mapping {
 namespace scan_matching {
@@ -66,7 +74,12 @@ class RealTimeCorrelativeScanMatcher2D {
   double Match(const transform::Rigid2d& initial_pose_estimate,
                const sensor::PointCloud& point_cloud, const Grid2D& grid,
                transform::Rigid2d* pose_estimate) const;
-
+  double Match(const transform::Rigid2d& initial_pose_estimate,
+                const sensor::PointCloud& point_cloud, const std::shared_ptr<const Submap2D> matching_submap,
+                transform::Rigid2d* pose_estimate) const;
+  double Match(const transform::Rigid2d& initial_pose_estimate,
+                const sensor::PointCloud& point_cloud, const std::shared_ptr<const Submap2D> matching_submap,
+                transform::Rigid2d* pose_estimate, int) const;
   // Computes the score for each Candidate2D in a collection. The cost is
   // computed as the sum of probabilities or normalized TSD values, different
   // from the Ceres CostFunctions: http://ceres-solver.org/modeling.html

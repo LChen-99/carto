@@ -46,7 +46,7 @@ void Run(const std::string& configuration_directory,
   exposer.RegisterCollectable(registry.GetCollectable());
   LOG(INFO) << "Exposing metrics at http://localhost:9100/metrics";
 #endif
-
+//prometheus
   proto::MapBuilderServerOptions map_builder_server_options =
       LoadMapBuilderServerOptions(configuration_directory,
                                   configuration_basename);

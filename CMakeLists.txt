@@ -15,6 +15,8 @@
 cmake_minimum_required(VERSION 3.2)
 
 project(cartographer)
+add_compile_options(-std=c++14)
+set(CMAKE_CXX_STANDARD 14)
 
 set(CARTOGRAPHER_MAJOR_VERSION 1)
 set(CARTOGRAPHER_MINOR_VERSION 0)
@@ -28,6 +30,8 @@ option(BUILD_PROMETHEUS "build Prometheus monitoring support" false)
 include("${PROJECT_SOURCE_DIR}/cmake/functions.cmake")
 google_initialize_cartographer_project()
 google_enable_testing()
+# 
+
 
 find_package(absl REQUIRED)
 set(BOOST_COMPONENTS iostreams)
@@ -39,6 +43,7 @@ find_package(Boost REQUIRED COMPONENTS ${BOOST_COMPONENTS})
 find_package(Ceres REQUIRED COMPONENTS SuiteSparse)
 find_package(Eigen3 REQUIRED)
 find_package(LuaGoogle REQUIRED)
+find_package(PCL REQUIRED)
 if(WIN32)
   # On Windows, Protobuf is incorrectly found by the bundled CMake module, so prefer native CMake config.
   set(protobuf_MODULE_COMPATIBLE TRUE CACHE INTERNAL "")
@@ -227,6 +232,28 @@ endif()
 target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC
   "${EIGEN3_INCLUDE_DIR}")
 target_link_libraries(${PROJECT_NAME} PUBLIC ${EIGEN3_LIBRARIES})
+
+add_definitions(${PCL_DEFINITIONS})
+link_directories(${PCL_LIBRARY_DIRS})
+# target_link_directories(${PROJECT_NAME} PUBLIC ${PCL_LIBRARY_DIRS})
+
+target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC "${PCL_INCLUDE_DIRS}")
+target_link_libraries(${PROJECT_NAME} PUBLIC ${PCL_LIBRARIES})
+
+
+
+set(BLACKLISTED_PCL_DEFINITIONS " -march=native -msse4.2 -mfpmath=sse ")
+foreach(DEFINITION ${PCL_DEFINITIONS})
+  list (FIND BLACKLISTED_PCL_DEFINITIONS "${DEFINITION}" DEFINITIONS_INDEX)
+  if (${DEFINITIONS_INDEX} GREATER -1)
+    continue()
+  endif()
+  set(TARGET_COMPILE_FLAGS "${TARGET_COMPILE_FLAGS} ${DEFINITION}")
+endforeach()
+
+message("PCL_INCLUDE_DIRS:" ${PCL_INCLUDE_DIRS})
+message("PCL_LIBRARIES:" ${PCL_LIBRARIES})
+message("PCL_LIBRARY_DIRS:" ${PCL_LIBRARY_DIRS})
 
 target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC
   "${CERES_INCLUDE_DIRS}")

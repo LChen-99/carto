@@ -62,9 +62,93 @@ LocalTrajectoryBuilder2D::TransformToGravityAlignedFrameAndFilter(
       sensor::VoxelFilter(cropped.misses, options_.voxel_filter_size())};
 }
 
+std::unique_ptr<transform::Rigid2d> LocalTrajectoryBuilder2D::My_ScanMatch(
+    const common::Time time, const transform::Rigid2d& pose_prediction,
+    const sensor::PointCloud& filtered_gravity_aligned_point_cloud,
+    const sensor::PointCloud& gravity_aligned_point_cloud
+    ){
+    if (active_submaps_.submaps().empty()) {
+      return absl::make_unique<transform::Rigid2d>(pose_prediction);
+    }
+    std::shared_ptr<const Submap2D> matching_submap =
+        active_submaps_.submaps().front();
+    // The online correlative scan matcher will refine the initial estimate for
+    // the Ceres scan matcher.
+    transform::Rigid2d initial_ceres_pose = pose_prediction;
+    // transform::Rigid2d initial_ceres_pose_icp = pose_prediction;
+
+    if (options_.use_online_correlative_scan_matching()) {
+      // const double score = real_time_correlative_scan_matcher_.Match(
+      //     pose_prediction, filtered_gravity_aligned_point_cloud,
+      //     *matching_submap->grid(), &initial_ceres_pose);
+      const double score = real_time_correlative_scan_matcher_.Match(
+      pose_prediction, filtered_gravity_aligned_point_cloud,
+      matching_submap, &initial_ceres_pose);
+      kRealTimeCorrelativeScanMatcherScoreMetric->Observe(score);
+    }
+ 
+    auto pose_observation = absl::make_unique<transform::Rigid2d>();
+    ceres::Solver::Summary summary;
+    ceres_scan_matcher_.Match(pose_prediction.translation(), initial_ceres_pose,
+                              filtered_gravity_aligned_point_cloud,
+                              *matching_submap->grid(), pose_observation.get(),
+                              &summary);
+    if (pose_observation) {
+      kCeresScanMatcherCostMetric->Observe(summary.final_cost);
+      const double residual_distance =
+          (pose_observation->translation() - pose_prediction.translation())
+              .norm();
+      kScanMatcherResidualDistanceMetric->Observe(residual_distance);
+      const double residual_angle =
+          std::abs(pose_observation->rotation().angle() -
+                  pose_prediction.rotation().angle());
+      kScanMatcherResidualAngleMetric->Observe(residual_angle);
+    }
+
+    //    static size_t tick = 0;
+    // if(tick % 200 == 0){
+    //   tick = 0;
+    //   // pcl::io::savePCDFileASCII ("source.pcd", *source);
+    //   // pcl::io::savePCDFileASCII ("target.pcd", *target);
+    //   // std::cout << "icp.getFinalTransformation() = " <<  std::endl <<  icp.getFinalTransformation() << std::endl;
+
+    //   // std::cout << "options_.use_online_correlative_scan_matching() = " << options_.use_online_correlative_scan_matching() << std::endl;
+    //   // std::cout << "has converged:" << icp.hasConverged() << " score: " << icp.getFitnessScore() << std::endl;
+    //   // std::cout << "source_cloud = " << std::endl << source_cloud.points().back().position << std::endl;
+    //   std::cout << "delta.rotation = " << std::endl << delta.rotation().matrix() << std::endl;
+    //   std::cout << "delta.translation = " << std::endl << delta.translation() << std::endl;
+    //   std::cout << "initial_ceres_pose_icp.rotation = " << std::endl << initial_ceres_pose_icp.rotation().matrix() << std::endl;
+    //   std::cout << "initial_ceres_pose.rotation = " << std::endl << initial_ceres_pose.rotation().matrix() << std::endl;
+    //   std::cout << "pose_prediction.rotation = " << std::endl << pose_prediction.rotation().matrix() << std::endl;
+    //   std::cout << "pose_observation.rotation = " << std::endl << pose_observation->rotation().matrix() << std::endl;
+    //   std::cout << "initial_ceres_pose_icp.translation = " << std::endl << initial_ceres_pose_icp.translation() << std::endl;
+    //   std::cout << "initial_ceres_pose.translation = " << std::endl << initial_ceres_pose.translation() << std::endl;
+    //   std::cout << "pose_prediction.translation = " << std::endl << pose_prediction.translation() << std::endl;
+    //   std::cout << "pose_observation.translation = " << std::endl << pose_observation->translation() << std::endl;
+    // }
+    // tick++;
+    return pose_observation;
+    // return nullptr;
+
+  }
+
+
+
+
+
 std::unique_ptr<transform::Rigid2d> LocalTrajectoryBuilder2D::ScanMatch(
     const common::Time time, const transform::Rigid2d& pose_prediction,
     const sensor::PointCloud& filtered_gravity_aligned_point_cloud) {
+  // 发布filtered_gravity_aligned_point_cloud
+  {
+
+  }
+  
+      //print pointcloud
+  //const std::vector<sensor::PointCloud::PointType> points = filtered_gravity_aligned_point_cloud.points();
+  //for(auto point : points){
+  //  std::cout << point.position << std::endl;
+  //}
   if (active_submaps_.submaps().empty()) {
     return absl::make_unique<transform::Rigid2d>(pose_prediction);
   }
@@ -195,12 +279,21 @@ LocalTrajectoryBuilder2D::AddRangeData(
     num_accumulated_ = 0;
     const transform::Rigid3d gravity_alignment = transform::Rigid3d::Rotation(
         extrapolator_->EstimateGravityOrientation(time));
+    //std::cout << "rotation =  " << std::endl;
     // TODO(gaschler): This assumes that 'range_data_poses.back()' is at time
     // 'time'.
+    // local坐标系下的坐标，
     accumulated_range_data_.origin = range_data_poses.back().translation();
+    // static int tick = 0;
+    // if(tick % 100 == 0){
+    //   std::cout << " range_data_poses[i] = " <<  std::endl << range_data_poses.back().translation() << std::endl;
+    //   std::cout << "accumulated_range_data_.origin = " << accumulated_range_data_.origin << std::endl;
+    // }
+    // tick++;
     return AddAccumulatedRangeData(
         time,
         TransformToGravityAlignedFrameAndFilter(
+          //R_local_to_cur
             gravity_alignment.cast<float>() * range_data_poses.back().inverse(),
             accumulated_range_data_),
         gravity_alignment, sensor_duration);
@@ -222,33 +315,66 @@ LocalTrajectoryBuilder2D::AddAccumulatedRangeData(
   // Computes a gravity aligned pose prediction.
   const transform::Rigid3d non_gravity_aligned_pose_prediction =
       extrapolator_->ExtrapolatePose(time);
+      //R_local<- g
   const transform::Rigid2d pose_prediction = transform::Project2D(
       non_gravity_aligned_pose_prediction * gravity_alignment.inverse());
 
   const sensor::PointCloud& filtered_gravity_aligned_point_cloud =
       sensor::AdaptiveVoxelFilter(gravity_aligned_range_data.returns,
                                   options_.adaptive_voxel_filter_options());
+  
   if (filtered_gravity_aligned_point_cloud.empty()) {
     return nullptr;
   }
 
   // local map frame <- gravity-aligned frame
   std::unique_ptr<transform::Rigid2d> pose_estimate_2d =
-      ScanMatch(time, pose_prediction, filtered_gravity_aligned_point_cloud);
+      My_ScanMatch(time, pose_prediction, filtered_gravity_aligned_point_cloud, gravity_aligned_range_data.returns);
   if (pose_estimate_2d == nullptr) {
     LOG(WARNING) << "Scan matching failed.";
     return nullptr;
   }
+  // R local <- g * R g <- cur
   const transform::Rigid3d pose_estimate =
       transform::Embed3D(*pose_estimate_2d) * gravity_alignment;
+  // test_lc
+ 
+  
   extrapolator_->AddPose(time, pose_estimate);
 
   sensor::RangeData range_data_in_local =
       TransformRangeData(gravity_aligned_range_data,
+      
                          transform::Embed3D(pose_estimate_2d->cast<float>()));
+
+
+   static size_t tick = 0;
+  if(tick % 100 == 0){
+  //   std::cout << "non_gravity_aligned_pose_prediction = " <<  std::endl << non_gravity_aligned_pose_prediction.rotation().matrix() << std::endl;
+  //   std::cout << "gravity_alignment = " <<  std::endl << gravity_alignment.rotation().matrix() << std::endl;
+  //   std::cout << "pose_prediction = " <<  std::endl << pose_prediction.rotation().matrix() << std::endl;
+  //  std::cout << "pose_estimate = " <<  std::endl << pose_estimate.rotation().matrix() << std::endl;
+  //  std::cout << "pose_estimate_2d = " <<  std::endl << (*pose_estimate_2d).rotation().matrix() << std::endl;
+  //  std::cout << "pose_estimate_2d.translation = " <<  std::endl << (*pose_estimate_2d).translation() << std::endl;
+  
+    // std::cout << "range_data_in_local.origin = " <<  std::endl << range_data_in_local.origin << std::endl;
+    // std::cout << "pose_estimate_2d.rotation = " <<  std::endl << pose_estimate_2d->rotation().matrix() << std::endl;
+    // std::cout << "pose_estimate_2d.translation = " <<  std::endl << pose_estimate_2d->translation().matrix() << std::endl;
+    // range_data_in_local.origin = 
+    //   -4.586
+    //   1.7555
+    // -5.74717e-09
+    // pose_estimate_2d.rotation = 
+    //     0.99998 -0.00625276
+    // 0.00625276     0.99998
+    // pose_estimate_2d.translation = 
+    // -4.586
+    // 1.7555
+  }
+  tick++;
   std::unique_ptr<InsertionResult> insertion_result = InsertIntoSubmap(
       time, range_data_in_local, filtered_gravity_aligned_point_cloud,
-      pose_estimate, gravity_alignment.rotation());
+      pose_estimate, *pose_estimate_2d, gravity_alignment.rotation(), gravity_aligned_range_data);
 
   const auto wall_time = std::chrono::steady_clock::now();
   if (last_wall_time_.has_value()) {
@@ -281,7 +407,9 @@ LocalTrajectoryBuilder2D::InsertIntoSubmap(
     const common::Time time, const sensor::RangeData& range_data_in_local,
     const sensor::PointCloud& filtered_gravity_aligned_point_cloud,
     const transform::Rigid3d& pose_estimate,
-    const Eigen::Quaterniond& gravity_alignment) {
+    const transform::Rigid2d& pose_estimate_2d,
+    const Eigen::Quaterniond& gravity_alignment,
+    const sensor::RangeData& gravity_aligned_range_data) {
   if (motion_filter_.IsSimilar(time, pose_estimate)) {
     return nullptr;
   }
@@ -295,8 +423,12 @@ LocalTrajectoryBuilder2D::InsertIntoSubmap(
           {},  // 'high_resolution_point_cloud' is only used in 3D.
           {},  // 'low_resolution_point_cloud' is only used in 3D.
           {},  // 'rotational_scan_matcher_histogram' is only used in 3D.
-          pose_estimate}),
-      std::move(insertion_submaps)});
+          pose_estimate,
+          pose_estimate_2d,
+          gravity_aligned_range_data
+          }),
+      std::move(insertion_submaps),
+      });
 }
 
 void LocalTrajectoryBuilder2D::AddImuData(const sensor::ImuData& imu_data) {

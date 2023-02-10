@@ -19,7 +19,7 @@
 
 #include <memory>
 #include <vector>
-
+#include <queue>
 #include "Eigen/Core"
 #include "cartographer/common/lua_parameter_dictionary.h"
 #include "cartographer/mapping/2d/grid_2d.h"
@@ -61,7 +61,15 @@ class Submap2D : public Submap {
                        const RangeDataInserterInterface* range_data_inserter);
   void Finish();
 
+  const pcl::PointCloud<pcl::PointXYZ>::Ptr GetPointData() const{ return point_datas_;}
+  
  private:
+ 
+  pcl::PointCloud<pcl::PointXYZ>::Ptr point_datas_;
+  //每一帧点云的数量
+  std::queue<int> points_nums_;
+  // 保存多少帧点云
+  const int max_node_num_ = 3;
   std::unique_ptr<Grid2D> grid_;
   ValueConversionTables* conversion_tables_;
 };

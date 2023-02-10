@@ -20,6 +20,7 @@
 #include <chrono>
 #include <memory>
 
+#include <pcl/io/pcd_io.h>
 #include "cartographer/common/time.h"
 #include "cartographer/mapping/2d/submap_2d.h"
 #include "cartographer/mapping/internal/2d/scan_matching/ceres_scan_matcher_2d.h"
@@ -34,7 +35,9 @@
 #include "cartographer/sensor/odometry_data.h"
 #include "cartographer/sensor/range_data.h"
 #include "cartographer/transform/rigid_transform.h"
-
+#include <pcl/registration/transformation_estimation_2D.h>
+#include <pcl/registration/icp.h>
+#include <pcl/common/transforms.h>
 namespace cartographer {
 namespace mapping {
 
@@ -46,6 +49,7 @@ class LocalTrajectoryBuilder2D {
   struct InsertionResult {
     std::shared_ptr<const TrajectoryNode::Data> constant_data;
     std::vector<std::shared_ptr<const Submap2D>> insertion_submaps;
+    sensor::RangeData gravity_aligned_range_data;
   };
   struct MatchingResult {
     common::Time time;
@@ -53,6 +57,7 @@ class LocalTrajectoryBuilder2D {
     sensor::RangeData range_data_in_local;
     // 'nullptr' if dropped by the motion filter.
     std::unique_ptr<const InsertionResult> insertion_result;
+    //sensor::RangeData gravity_aligned_range_data;
   };
 
   explicit LocalTrajectoryBuilder2D(
@@ -88,14 +93,20 @@ class LocalTrajectoryBuilder2D {
       common::Time time, const sensor::RangeData& range_data_in_local,
       const sensor::PointCloud& filtered_gravity_aligned_point_cloud,
       const transform::Rigid3d& pose_estimate,
-      const Eigen::Quaterniond& gravity_alignment);
+      const transform::Rigid2d& pose_estimate_2d,
+      const Eigen::Quaterniond& gravity_alignment,
+      const sensor::RangeData& gravity_aligned_range_data);
 
   // Scan matches 'filtered_gravity_aligned_point_cloud' and returns the
   // observed pose, or nullptr on failure.
   std::unique_ptr<transform::Rigid2d> ScanMatch(
       common::Time time, const transform::Rigid2d& pose_prediction,
       const sensor::PointCloud& filtered_gravity_aligned_point_cloud);
-
+  std::unique_ptr<transform::Rigid2d> My_ScanMatch(
+    const common::Time time, const transform::Rigid2d& pose_prediction,
+    const sensor::PointCloud& filtered_gravity_aligned_point_cloud,
+    const sensor::PointCloud& gravity_aligned_range_data
+   );
   // Lazily constructs a PoseExtrapolator.
   void InitializeExtrapolator(common::Time time);
 

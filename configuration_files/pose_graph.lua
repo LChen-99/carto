@@ -1,3 +1,11 @@
+--[[
+Author: LuoChen 1425523063@qq.com
+Date: 2022-12-08 15:32:55
+LastEditors: LuoChen 1425523063@qq.com
+LastEditTime: 2023-02-09 10:58:56
+FilePath: /catkin_ws/src/cartographer/configuration_files/pose_graph.lua
+Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+--]]
 -- Copyright 2016 The Cartographer Authors
 --
 -- Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +21,7 @@
 -- limitations under the License.
 
 POSE_GRAPH = {
-  optimize_every_n_nodes = 90,
+  optimize_every_n_nodes = 0,
   constraint_builder = {
     sampling_ratio = 0.3,
     max_constraint_distance = 15.,

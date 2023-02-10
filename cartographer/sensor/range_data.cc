@@ -1,4 +1,12 @@
 /*
+ * @Author: LuoChen 1425523063@qq.com
+ * @Date: 2022-12-08 15:32:55
+ * @LastEditors: LuoChen 1425523063@qq.com
+ * @LastEditTime: 2023-02-07 19:57:15
+ * @FilePath: /catkin_ws/src/cartographer/cartographer/sensor/range_data.cc
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ */
+/*
  * Copyright 2016 The Cartographer Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +29,16 @@
 
 namespace cartographer {
 namespace sensor {
+
+pcl::PointCloud<pcl::PointXYZ> ToPointCloudMessage(const ::cartographer::sensor::PointCloud& filtered_gravity_aligned_point_cloud){
+  pcl::PointCloud<pcl::PointXYZ> cloud(filtered_gravity_aligned_point_cloud.size(),1);
+  for(size_t i = 0; i < filtered_gravity_aligned_point_cloud.size(); i++){
+    cloud.at(i).x = filtered_gravity_aligned_point_cloud.points().at(i).position[0];
+    cloud.at(i).y = filtered_gravity_aligned_point_cloud.points().at(i).position[1];
+    cloud.at(i).z = filtered_gravity_aligned_point_cloud.points().at(i).position[2];
+  } 
+  return cloud;
+}
 
 RangeData TransformRangeData(const RangeData& range_data,
                              const transform::Rigid3f& transform) {

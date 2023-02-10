@@ -57,6 +57,7 @@ void MaybeAddPureLocalizationTrimmer(
     const int trajectory_id,
     const proto::TrajectoryBuilderOptions& trajectory_options,
     PoseGraph* pose_graph) {
+  // 如果使用旧参数，log会发出警告
   if (trajectory_options.pure_localization()) {
     LOG(WARNING)
         << "'TrajectoryBuilderOptions::pure_localization' field is deprecated. "
@@ -78,6 +79,7 @@ MapBuilder::MapBuilder(const proto::MapBuilderOptions& options)
     : options_(options), thread_pool_(options.num_background_threads()) {
   CHECK(options.use_trajectory_builder_2d() ^
         options.use_trajectory_builder_3d());
+  // 实例化pose_graph
   if (options.use_trajectory_builder_2d()) {
     pose_graph_ = absl::make_unique<PoseGraph2D>(
         options_.pose_graph_options(),
@@ -92,6 +94,7 @@ MapBuilder::MapBuilder(const proto::MapBuilderOptions& options)
             options_.pose_graph_options().optimization_problem_options()),
         &thread_pool_);
   }
+  // 实例化sensor_collator
   if (options.collate_by_trajectory()) {
     sensor_collator_ = absl::make_unique<sensor::TrajectoryCollator>();
   } else {
@@ -103,15 +106,17 @@ int MapBuilder::AddTrajectoryBuilder(
     const std::set<SensorId>& expected_sensor_ids,
     const proto::TrajectoryBuilderOptions& trajectory_options,
     LocalSlamResultCallback local_slam_result_callback) {
+
   const int trajectory_id = trajectory_builders_.size();
 
   absl::optional<MotionFilter> pose_graph_odometry_motion_filter;
+  // 添加一个motionfilter
   if (trajectory_options.has_pose_graph_odometry_motion_filter()) {
     LOG(INFO) << "Using a motion filter for adding odometry to the pose graph.";
     pose_graph_odometry_motion_filter.emplace(
         MotionFilter(trajectory_options.pose_graph_odometry_motion_filter()));
   }
-
+  // 如果是3dslam
   if (options_.use_trajectory_builder_3d()) {
     std::unique_ptr<LocalTrajectoryBuilder3D> local_trajectory_builder;
     if (trajectory_options.has_trajectory_builder_3d_options()) {
@@ -128,6 +133,7 @@ int MapBuilder::AddTrajectoryBuilder(
             static_cast<PoseGraph3D*>(pose_graph_.get()),
             local_slam_result_callback, pose_graph_odometry_motion_filter)));
   } else {
+  // 如果是2dslam
     std::unique_ptr<LocalTrajectoryBuilder2D> local_trajectory_builder;
     if (trajectory_options.has_trajectory_builder_2d_options()) {
       local_trajectory_builder = absl::make_unique<LocalTrajectoryBuilder2D>(
@@ -138,14 +144,16 @@ int MapBuilder::AddTrajectoryBuilder(
     trajectory_builders_.push_back(absl::make_unique<CollatedTrajectoryBuilder>(
         trajectory_options, sensor_collator_.get(), trajectory_id,
         expected_sensor_ids,
+        // 创建一个globalTrajectoryBuilder，其中包含local_traj_bulider和pose graph
         CreateGlobalTrajectoryBuilder2D(
             std::move(local_trajectory_builder), trajectory_id,
             static_cast<PoseGraph2D*>(pose_graph_.get()),
             local_slam_result_callback, pose_graph_odometry_motion_filter)));
   }
+  // 如果使用PureLocalization，只保留3个submap
   MaybeAddPureLocalizationTrimmer(trajectory_id, trajectory_options,
                                   pose_graph_.get());
-
+  // ?? 
   if (trajectory_options.has_initial_trajectory_pose()) {
     const auto& initial_trajectory_pose =
         trajectory_options.initial_trajectory_pose();
@@ -154,6 +162,9 @@ int MapBuilder::AddTrajectoryBuilder(
         transform::ToRigid3(initial_trajectory_pose.relative_pose()),
         common::FromUniversal(initial_trajectory_pose.timestamp()));
   }
+
+
+  // 保存每条轨迹的配置信息
   proto::TrajectoryBuilderOptionsWithSensorIds options_with_sensor_ids_proto;
   for (const auto& sensor_id : expected_sensor_ids) {
     *options_with_sensor_ids_proto.add_sensor_id() = ToProto(sensor_id);

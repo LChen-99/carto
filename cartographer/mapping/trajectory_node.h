@@ -60,6 +60,8 @@ struct TrajectoryNode {
 
     // The node pose in the local SLAM frame.
     transform::Rigid3d local_pose;
+    transform::Rigid2d local_pose_2d;
+    sensor::RangeData gravity_aligned_range_data;
   };
 
   common::Time time() const { return constant_data->time; }

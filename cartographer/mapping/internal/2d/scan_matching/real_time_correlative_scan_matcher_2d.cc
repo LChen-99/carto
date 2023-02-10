@@ -20,7 +20,7 @@
 #include <cmath>
 #include <functional>
 #include <limits>
-
+#include <pcl/registration/ndt.h>
 #include "Eigen/Geometry"
 #include "cartographer/common/lua_parameter_dictionary.h"
 #include "cartographer/common/math.h"
@@ -29,7 +29,9 @@
 #include "cartographer/sensor/point_cloud.h"
 #include "cartographer/transform/transform.h"
 #include "glog/logging.h"
-
+#include <pcl/registration/transformation_estimation_2D.h>
+#include <pcl/registration/icp.h>
+#include <pcl/common/transforms.h>
 namespace cartographer {
 namespace mapping {
 namespace scan_matching {
@@ -147,6 +149,119 @@ double RealTimeCorrelativeScanMatcher2D::Match(
       initial_rotation * Eigen::Rotation2Dd(best_candidate.orientation));
   return best_candidate.score;
 }
+
+double RealTimeCorrelativeScanMatcher2D::Match(
+    const transform::Rigid2d& initial_pose_estimate,
+    const sensor::PointCloud& point_cloud, const std::shared_ptr<const Submap2D> matching_submap,
+    transform::Rigid2d* pose_estimate) const{
+    pcl::PointCloud<pcl::PointXYZ>::Ptr
+    non_target = matching_submap->GetPointData();
+    pcl::PointCloud<pcl::PointXYZ>::Ptr target(new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::VoxelGrid<pcl::PointXYZ> sor;
+    sor.setInputCloud (non_target);
+    sor.setLeafSize (0.02f, 0.02f, 0.02f);
+    sor.filter (*target);
+    sensor::PointCloud source_cloud;
+    for(cartographer::sensor::PointCloud::PointType point : point_cloud.points()){
+      
+      // cartographer::sensor::PointCloud::PointType new_point( Eigen::Vector3f());
+      point.position.head<2>() = initial_pose_estimate.cast<float>() * point.position.head<2>();
+      point.position[2] = 0;
+      source_cloud.push_back(point);
+      //  source_cloud.points().at(i).position[2] = 0;
+    }
+    
+    pcl::PointCloud<pcl::PointXYZ>::Ptr source (new pcl::PointCloud<pcl::PointXYZ>);
+    
+    *source = ToPointCloudMessage(source_cloud);
+    
+    pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
+    pcl::PointCloud<pcl::PointXYZ> Final;
+    pcl::registration::TransformationEstimation2D<pcl::PointXYZ, pcl::PointXYZ>::Ptr est;
+    est.reset(new pcl::registration::TransformationEstimation2D<pcl::PointXYZ, pcl::PointXYZ>);
+    
+    icp.setTransformationEstimation(est);
+    //最大匹配距离
+    icp.setMaxCorrespondenceDistance(0.5
+    );
+    icp.setMaximumIterations(200);
+    icp.setTransformationEpsilon(1e-10);
+    icp.setEuclideanFitnessEpsilon(1e-5);
+    icp.setRANSACIterations(2);
+    icp.setInputSource(source);
+    icp.setInputTarget(target);
+
+    icp.align(Final);
+    // if(!icp.hasConverged()){
+    //   std::cout << "icp nonconverged!" << std::endl;
+    // }
+    Eigen::Matrix4d transformation = icp.getFinalTransformation().cast<double>();
+    transform::Rigid2d delta(Eigen::Vector2d(transformation.block<2, 1>(0, 3)), Eigen::Rotation2Dd(transformation.block<2, 2>(0, 0)));
+
+    // delta.Rotation(Eigen::Rotation2Dd(transformation.block<2, 2>(0, 0)));
+    // delta.Translation(Eigen::Vector2d(transformation.block<2, 1>(0, 3)));
+    *pose_estimate = delta * initial_pose_estimate;
+    return icp.getFitnessScore();
+    }
+
+double RealTimeCorrelativeScanMatcher2D::Match(
+    const transform::Rigid2d& initial_pose_estimate,
+    const sensor::PointCloud& point_cloud, const std::shared_ptr<const Submap2D> matching_submap,
+    transform::Rigid2d* pose_estimate, int) const{
+      pcl::PointCloud<pcl::PointXYZ>::Ptr
+    non_target = matching_submap->GetPointData();
+    pcl::PointCloud<pcl::PointXYZ>::Ptr target(new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::VoxelGrid<pcl::PointXYZ> sor;
+    sor.setInputCloud (non_target);
+    sor.setLeafSize (0.05f, 0.05f, 0.05f);
+    sor.filter (*target);
+    sensor::PointCloud source_cloud;
+    for(cartographer::sensor::PointCloud::PointType point : point_cloud.points()){
+      
+      // cartographer::sensor::PointCloud::PointType new_point( Eigen::Vector3f());
+      point.position.head<2>() = initial_pose_estimate.cast<float>() * point.position.head<2>();
+      point.position[2] = 0;
+      source_cloud.push_back(point);
+      //  source_cloud.points().at(i).position[2] = 0;
+    }
+    
+    pcl::PointCloud<pcl::PointXYZ>::Ptr source (new pcl::PointCloud<pcl::PointXYZ>);
+    
+    *source = ToPointCloudMessage(source_cloud);
+    
+    pcl::NormalDistributionsTransform<pcl::PointXYZ, pcl::PointXYZ> ndt;
+    pcl::PointCloud<pcl::PointXYZ> Final;
+    pcl::registration::TransformationEstimation2D<pcl::PointXYZ, pcl::PointXYZ>::Ptr est;
+    est.reset(new pcl::registration::TransformationEstimation2D<pcl::PointXYZ, pcl::PointXYZ>);
+    
+    ndt.setTransformationEstimation(est);
+    //最大匹配距离
+    ndt.setTransformationEpsilon (1e-10);
+  // Setting maximum step size for More-Thuente line search.
+    ndt.setStepSize (0.1);
+    //Setting Resolution of NDT grid structure (VoxelGridCovariance).
+    ndt.setResolution (0.5);
+
+    // Setting max number of registration iterations.
+    ndt.setMaximumIterations (100);
+
+    // Setting point cloud to be aligned.
+    ndt.setInputSource (source);
+    // Setting point cloud to be aligned to.
+    ndt.setInputTarget (target);
+
+    ndt.align(Final);
+    // if(!icp.hasConverged()){
+    //   std::cout << "icp nonconverged!" << std::endl;
+    // }
+    Eigen::Matrix4d transformation = ndt.getFinalTransformation().cast<double>();
+    transform::Rigid2d delta(Eigen::Vector2d(transformation.block<2, 1>(0, 3)), Eigen::Rotation2Dd(transformation.block<2, 2>(0, 0)));
+
+    // delta.Rotation(Eigen::Rotation2Dd(transformation.block<2, 2>(0, 0)));
+    // delta.Translation(Eigen::Vector2d(transformation.block<2, 1>(0, 3)));
+    *pose_estimate = delta * initial_pose_estimate;
+    return ndt.getFitnessScore();
+    }
 
 void RealTimeCorrelativeScanMatcher2D::ScoreCandidates(
     const Grid2D& grid, const std::vector<DiscreteScan2D>& discrete_scans,

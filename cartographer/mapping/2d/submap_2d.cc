@@ -139,6 +139,27 @@ void Submap2D::InsertRangeData(
     const RangeDataInserterInterface* range_data_inserter) {
   CHECK(grid_);
   CHECK(!insertion_finished());
+  if(point_datas_ == nullptr){
+    point_datas_ = pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
+  }
+  pcl::PointCloud<pcl::PointXYZ> point_data;
+  point_data = ToPointCloudMessage(range_data.returns);
+  //插入点云到submap中
+  for(auto point : point_data.points){
+    point.z = 0;
+    point_datas_->push_back(point);
+  }
+  //当前帧点云的数量记录下来
+  points_nums_.push(point_data.size());
+  //清除以前的点云
+  if(points_nums_.size() > max_node_num_ ){
+    size_t size = points_nums_.front();
+    
+    point_datas_->erase(point_datas_->begin(), point_datas_->begin() + size);
+    points_nums_.pop();
+  }
+
+  
   range_data_inserter->Insert(range_data, grid_.get());
   set_num_range_data(num_range_data() + 1);
 }
@@ -149,6 +170,7 @@ void Submap2D::Finish() {
   grid_ = grid_->ComputeCroppedGrid();
   set_insertion_finished(true);
 }
+
 
 ActiveSubmaps2D::ActiveSubmaps2D(const proto::SubmapsOptions2D& options)
     : options_(options), range_data_inserter_(CreateRangeDataInserter()) {}
